@@ -1,5 +1,6 @@
-import { pipe } from "fp-ts/lib/function.js";
-import * as O from 'fp-ts/lib/Option.js'
+import { flow, pipe } from "fp-ts/lib/function.js";
+import * as O from "fp-ts/lib/Option.js";
+import * as A from "fp-ts/lib/Array.js";
 
 type Car = {
   brand: string;
@@ -22,16 +23,18 @@ type Option<A> = Some<A> | None;
 const none: Option<never> = { _tag: "None" };
 const some = <A>(value: A): Option<A> => ({ _tag: "Some", value });
 
-const isNone = <A>(o: Option<A>): o is None => o._tag === "None"
-const isSome= <A>(o: Option<A>): o is Some<A> => o._tag === "Some"
+const isNone = <A>(o: Option<A>): o is None => o._tag === "None";
+const isSome = <A>(o: Option<A>): o is Some<A> => o._tag === "Some";
 
-const mapOption = <A, B>(fn: (value: A) => B) => (option: Option<A>): Option<B> => {
-  if (isNone(option)) {
-    return none;
-  }
+const mapOption =
+  <A, B>(fn: (value: A) => B) =>
+  (option: Option<A>): Option<B> => {
+    if (isNone(option)) {
+      return none;
+    }
 
-  return some(fn(option.value))
-}
+    return some(fn(option.value));
+  };
 
 const cars: Car[] = [
   {
@@ -42,7 +45,7 @@ const cars: Car[] = [
   },
   {
     brand: "AUDI",
-    year: 2018,
+    year: 2023,
     engine: "petrol",
     mileage: 45000,
   },
@@ -76,7 +79,6 @@ const cars: Car[] = [
 //   return car ? some(car) : none;
 // }
 
-
 // const maybeCar = findCarByBrand(cars, "BhMW");
 // const maybeYear = mapOption((car: Car) => car.year)(maybeCar);
 // console.log(maybeYear)
@@ -88,7 +90,6 @@ const cars: Car[] = [
 // );
 
 // console.log(maybeYear2)
-
 
 // const findCarByBrand = (cars: Car[], brand: string): O.Option<Car> => O.fromNullable(cars.find(c => c.brand === brand));
 
@@ -113,12 +114,28 @@ const cars: Car[] = [
 //    - принимает Option<Car>
 //    - возвращает строку: либо форматированную машину, либо "Not found"
 
-const getCarYear = (brand: string) => (cars: Car[]): Option<number> => {
-  const car = cars.find((c) => c.brand === brand);
-  if (car) {
-    return O.some(car.year)
-  }
-  return O.none
-}
+const formatFoundCar: (fa: Option<Car>) => string = flow(
+  O.match(
+    () => "Not found",
+    (car: Car) => car.brand
+  )
+);
 
-// const getCarYear2
+const getOldestCarBrand = (cars: Car[]) =>
+  pipe(
+    cars,
+    (cars) => cars.toSorted((a, b) => a.year - b.year),
+    A.head,
+    O.map((car) => car.brand)
+  );
+
+const getCarYear =
+  (brand: string) =>
+  (cars: Car[]): Option<number> => {
+    return pipe(
+      O.fromNullable(cars.find((c) => c.brand === brand)),
+      O.map((c) => c.year)
+    );
+  };
+
+console.log(getOldestCarBrand(cars));

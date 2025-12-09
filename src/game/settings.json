@@ -1,17 +1,10 @@
 {
-  "minYear": 2010,
-  "maxYear": 2019,
-  "mileageDifference": 100,
-  "allowedEngines": [
-    "diesel",
-    "petrol",
-    "electric"
-  ],
-  "allowedBrands": [
-    "Ford",
-    "Audi",
-    "BMW"
-  ],
-  "maxMileage": 100000,
-  "numRounds": 10
+  "rounds": 10,
+  "carGeneration": {
+    "minYear": 2000,
+    "maxYear": 2023,
+    "minMileage": 10000,
+    "maxMileage": 150000
+  },
+  "scoreThreshold": 100
 }

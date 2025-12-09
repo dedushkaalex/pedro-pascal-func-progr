@@ -10,7 +10,7 @@ export default defineConfig(
   tseslint.configs.recommended,
   eslintConfigPrettier,
   {
-    ignores: ["dist"],
+    ignores: ["dist", "./src/game/malformed.json"],
     rules: {
       "@typescript-eslint/no-unused-vars": [
         "warn", // или "error"

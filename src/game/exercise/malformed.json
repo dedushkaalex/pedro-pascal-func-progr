@@ -1,0 +1,5 @@
+{
+  "rounds": 10,
+  "carGeneration": {
+    "minYear": 2000
+  }
