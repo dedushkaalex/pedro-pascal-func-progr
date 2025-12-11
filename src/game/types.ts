@@ -1,6 +1,6 @@
-export type Brand = 'BMW' | 'Audi' | 'Ford';
+export type Brand = "BMW" | "Audi" | "Ford";
 
-export type Engine = 'diesel' | 'petrol' | 'electric';
+export type Engine = "diesel" | "petrol" | "electric";
 
 export interface Car {
   brand: Brand;

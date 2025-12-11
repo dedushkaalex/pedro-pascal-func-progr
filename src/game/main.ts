@@ -1,159 +1,116 @@
 import { pipe } from "fp-ts/lib/function.js";
 import * as E from "fp-ts/lib/Either.js";
-import * as T from "fp-ts/lib/Task.js";
 import * as TE from "fp-ts/lib/TaskEither.js";
 import * as RTE from "fp-ts/lib/ReaderTaskEither.js";
-import * as IO from "fp-ts/lib/IO.js";
+import * as IOE from "fp-ts/lib/IOEither.js";
+import { log } from "fp-ts/lib/Console.js";
+import * as NonEmptyArray from "fp-ts/lib/NonEmptyArray.js";
 import * as readline from "readline";
 import { readGameSettings, type GameSettings } from "./settings.js";
 import { generateCar } from "./carGenerator.js";
 import { ordCar } from "./compare.js";
+import type { Car } from "./types.js";
 
-const log =
-  (...args: ReadonlyArray<unknown>): IO.IO<void> =>
-  () => {
-    console.log(...args);
-  };
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout,
+});
 
-const askQuestion = (query: string): TE.TaskEither<Error, string> =>
-  TE.tryCatch(
-    () =>
-      new Promise((resolve) => {
-        const rl = readline.createInterface({
-          input: process.stdin,
-          output: process.stdout,
-        });
-        rl.question(query, (answer) => {
-          rl.close();
-          resolve(answer);
-        });
-      }),
-    (reason) => new Error(String(reason))
+type Env = { rl: readline.Interface };
+
+const generateRound = (settings: GameSettings) => ({
+  car1: generateCar(settings),
+  car2: generateCar(settings),
+});
+
+const generateRounds = (settings: GameSettings) =>
+  pipe(
+    NonEmptyArray.range(0, settings.rounds - 1),
+    NonEmptyArray.map(() => generateRound(settings)),
+    IOE.of
   );
 
-const main = (): void => {
-  pipe(
-    log('--- Запуск игры "Оценщик автомобилей" ---'),
-    IO.chain(() => {
-      const settingsEither = readGameSettings("./src/game/settings.json");
-
-      return pipe(
-        settingsEither,
-        E.match(
-          (error) => {
-            return pipe(
-              log("Критическая ошибка: не удалось загрузить настройки игры."),
-              IO.chain(() => log(error))
-            );
-          },
-          (settings) => {
-            return pipe(
-              log("Настройки успешно загружены. Начинаем игру!"),
-              IO.chain(() => runGame(settings)) // <--- FIX 1
-            );
-          }
-        )
-      );
-    })
-  )();
+type Round = {
+  car1: Car;
+  car2: Car;
 };
 
-const playRound = (
-  roundNum: number
-): RTE.ReaderTaskEither<GameSettings, Error, number> =>
-  pipe(
-    RTE.ask<GameSettings>(),
-    RTE.chain((settings) =>
-      pipe(
-        RTE.fromIO(log(`\n--- Раунд ${roundNum} ---`)),
-        RTE.chain(() => {
-          const carA = generateCar(settings);
-          const carB = generateCar(settings);
+const ask =
+  (questionStr: string): RTE.ReaderTaskEither<Env, Error, string> =>
+  ({ rl }) =>
+    TE.tryCatch(
+      () => new Promise((resolve) => rl.question(questionStr, resolve)),
+      E.toError
+    );
 
-          return pipe(
-            RTE.fromIO(
-              log(`A: ${carA.brand} ${carA.year}г., пробег ${carA.mileage}км`)
-            ),
-            RTE.chain(() =>
-              RTE.fromIO(
-                log(`B: ${carB.brand} ${carB.year}г., пробег ${carB.mileage}км`)
-              )
-            ),
-            RTE.chain(() => {
-              const result = ordCar.compare(carA, carB);
-              const correctAnswer = result === 1 ? "a" : "b";
-
-              return pipe(
-                askQuestion("Какая машина дороже? (a/b): "),
-                RTE.fromTaskEither,
-                RTE.chain((answer) => {
-                  const userAnswer = answer.toLowerCase().trim();
-                  if (userAnswer !== "a" && userAnswer !== "b") {
-                    return RTE.left(
-                      new Error('Некорректный ввод. Введите "a" или "b".')
-                    );
-                  }
-
-                  if (userAnswer === correctAnswer) {
-                    return pipe(
-                      RTE.fromIO(log("✅ Верно!")),
-                      RTE.map(() => 1)
-                    );
-                  } else {
-                    return pipe(
-                      RTE.fromIO(
-                        log(
-                          `❌ Ошибка! Правильный ответ: ${correctAnswer.toUpperCase()}`
-                        )
-                      ),
-                      RTE.map(() => 0)
-                    );
-                  }
-                })
-              );
-            })
-          );
-        })
-      )
-    )
-  );
-
-const gameLoop = (
-  currentRound: number,
-  totalScore: number
-): RTE.ReaderTaskEither<GameSettings, Error, number> =>
-  pipe(
-    RTE.ask<GameSettings>(),
-    RTE.chain((settings) => {
-      if (currentRound > settings.rounds) {
-        return RTE.right(totalScore);
-      }
-
-      return pipe(
-        playRound(currentRound),
-        RTE.chain((roundScore) => {
-          const newScore = totalScore + roundScore;
-          return pipe(
-            RTE.fromIO(log(`Текущий счет: ${newScore}`)),
-            RTE.chain(() => gameLoop(currentRound + 1, newScore))
-          );
-        })
-      );
-    })
-  );
-
-const runGame = (settings: GameSettings) => {
-  return pipe(
-    RTE.fromIO(log(`Игра будет состоять из ${settings.rounds} раундов.`)),
-    RTE.chain(() => gameLoop(1, 0)),
-    RTE.match(
-      (error) => T.fromIO(log("\nИгра завершилась с ошибкой:", error.message)),
-      (finalScore) =>
-        T.fromIO(
-          log(`\n--- Игра окончена! --- \nВаш итоговый счет: ${finalScore}`)
+const runGame = (
+  rounds: NonEmptyArray.NonEmptyArray<Round>
+): RTE.ReaderTaskEither<Env, Error, ReadonlyArray<number>> => {
+  const playRound = (round: Round): RTE.ReaderTaskEither<Env, Error, number> =>
+    pipe(
+      RTE.fromIO(
+        log(
+          `\nВыберите машину:\n1. ${round.car1.brand} ${round.car1.year} (${round.car1.mileage}km)\n2. ${round.car2.brand} ${round.car2.year} (${round.car2.mileage}km)`
         )
-    )
-  )(settings);
+      ),
+      RTE.chain(() => ask("Ваш выбор (1 или 2): ")),
+      RTE.chain((choice) => {
+        const numericChoice = parseInt(choice, 10);
+        if (
+          isNaN(numericChoice) ||
+          (numericChoice !== 1 && numericChoice !== 2)
+        ) {
+          return RTE.left(new Error("Неверный выбор. Введите 1 или 2."));
+        }
+        const comparison = ordCar.compare(round.car1, round.car2);
+
+        if (comparison === 0) {
+          return pipe(
+            RTE.fromIO(log("Ничья!")),
+            RTE.map(() => 0)
+          );
+        }
+
+        if (
+          (comparison === 1 && numericChoice === 1) ||
+          (comparison === -1 && numericChoice === 2)
+        ) {
+          return pipe(
+            RTE.fromIO(log("☄️  Вы угадали!")),
+            RTE.map(() => 1)
+          );
+        }
+
+        return pipe(
+          RTE.fromIO(log("🛑  Вы не угадали!")),
+          RTE.map(() => 0)
+        );
+      })
+    );
+
+  return pipe(rounds, NonEmptyArray.traverse(RTE.ApplicativeSeq)(playRound));
 };
 
-main();
+const calculateScore = (scores: ReadonlyArray<number>): number =>
+  scores.reduce((acc, score) => acc + score, 0);
+
+const finishGame = (score: number) =>
+  RTE.fromIO(log(`\n📊  Ваш итоговый счет: ${score}`));
+
+const run = pipe(
+  readGameSettings("./src/game/settings.json"),
+  IOE.fromEither,
+  IOE.flatMap(generateRounds),
+  RTE.fromIOEither,
+  RTE.flatMap(runGame),
+  RTE.map(calculateScore),
+  RTE.flatMap(finishGame)
+);
+
+(async () => {
+  const main = run({ rl });
+
+  await main();
+
+  rl.close();
+})();
